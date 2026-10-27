@@ -318,17 +318,20 @@ CONTAINER ID   IMAGE     COMMAND       CREATED          STATUS          PORTS   
 [root@docker-server ~]# 
 ```
 
-# 查看容器日志
+# 查看Docker命令
+
+## 查看Docker日志
 
 - 查看日志可以在不进入容器的前提下查看，即使退出容器也不会停止
-
 - `docker logs 容器名`
 
     - 可以查看容器的现有日志
-
 - `docker logs -f 容器名`
-
     - 持续追踪，查看容器日志
+
+## 查看Docker资源占用情况
+
+* `docker stats`
 
 # 指定容器DNS
 

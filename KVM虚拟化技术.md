@@ -1,4 +1,4 @@
-# Day1（KVM虚拟化技术）
+# KVM虚拟化技术
 
 # 云计算介绍
 
@@ -839,11 +839,11 @@ NAT网络拓扑
 ![image\.png](图片和附件/image%206.png)
 
     ## 配置桥接网络
-
+    
     在宿主机上，桥接自动获取IP地址
-
+    
     - 注意，物理网卡在这样操作后，ens160就会被挂到br0桥下，原本ens160的IP地址会丢失，br0桥的虚拟接口会获得原本的IP。
-
+    
     ```MATLAB
     nmcli connection add type bridge ifname br0 con-name br0
     nmcli connection modify br0 ipv4.method auto ipv6.method ignore

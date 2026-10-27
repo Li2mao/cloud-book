@@ -266,6 +266,8 @@ IMAGE          CREATED       CREATED BY                                      SIZ
 -rw-r--r--. 1 root root 196167168 Mar 24 19:29 /opt/nginx-1.tar.gz
 ```
 
+* 导出的镜像还是过大，可以使用gzip再次进行压缩，变成.tar.gz的格式
+
 ## 导入
 
 先将导出的镜像发到需要导入的docker服务器中
@@ -283,6 +285,27 @@ Loaded image: centos:latest
 [root@docker-server ~]# docker load < /opt/nginx.tar.gz 
 Loaded image: centos:latest
 ```
+
+### tra.gz压缩/解压
+
+tar.gz：Linux 最常见打包压缩包（tar 打包 + gzip 压缩）
+
+```
+# 解压到当前目录，打印过程（最常用）
+tar -zxvf xxx.tar.gz
+# 静默解压，不打印
+tar -zxf xxx.tar.gz
+# 解压到指定目录
+tar -zxvf xxx.tar.gz -C /opt
+```
+
+参数：
+
+- `-x`：解压
+- `-z`：gzip 解压（tar.gz 专用）
+- `-v`：verbose，显示解压文件（可选）
+- `-f`：指定压缩包，**必须放最后**
+- `-C`：指定解压目标目录
 
 # 删除镜像
 
@@ -500,90 +523,6 @@ IMAGE          CREATED       CREATED BY                                      SIZ
 <missing>      6 weeks ago   ENV NGINX_VERSION=1.27.4                        0B        buildkit.dockerfile.v0
 <missing>      6 weeks ago   LABEL maintainer=NGINX Docker Maintainers <d…   0B        buildkit.dockerfile.v0
 <missing>      6 weeks ago   *# debian.sh --arch 'amd64' out/ 'bookworm' '…   74.8MB    debuerreotype 0.15*
-```
-
-# 镜像导入导出
-
-## 导出
-
-可以将镜像从本地导出为一个压缩文件，然后复制到其他服务器进行导入使用
-
-- 导出方法一
-
-```Bash
-[root@localhost ~]# docker save nginx:latest -o /opt/nginx.tar.gz
-[root@localhost ~]# ll /opt/nginx.tar.gz
--rw-------. 1 root root 196167168 Mar 24 19:28 /opt/nginx.tar.gz
-```
-
-- 导出方法二
-
-```Bash
-[root@localhost ~]# docker save nginx:latest > /opt/nginx-1.tar.gz
-[root@localhost ll /opt/nginx-1.tar.gz
--rw-r--r--. 1 root root 196167168 Mar 24 19:29 /opt/nginx-1.tar.gz
-```
-
-## 导入
-
-先将导出的镜像发到需要导入的docker服务器中
-
-- 导入方法一
-
-```Bash
-[root@docker-server ~]# docker load -i /opt/nginx.tar.gz 
-Loaded image: centos:latest
-```
-
-- 导出方法二
-
-```Bash
-[root@docker-server ~]# docker load < /opt/nginx.tar.gz 
-Loaded image: centos:latest
-```
-
-# 删除镜像
-
-- 使用镜像名称\+标签
-
-```Bash
-[root@docker-server ~]# docker images
-REPOSITORY    TAG       IMAGE ID       CREATED        SIZE
-nginx         latest    d1a364dc548d   2 weeks ago    133MB
-hello-world   latest    d1165f221234   3 months ago   13.3kB
-centos        latest    300e315adb2f   6 months ago   209MB
-mycentos      latest    300e315adb2f   6 months ago   209MB
-[root@docker-server ~]# docker rmi nginx:latest 
-Untagged: nginx:latest
-Untagged: nginx@sha256:6d75c99af15565a301e48297fa2d121e15d80ad526f8369c526324f0f7ccb750
-Deleted: sha256:d1a364dc548d5357f0da3268c888e1971bbdb957ee3f028fe7194f1d61c6fdee
-Deleted: sha256:fcc8faba78fe8a1f75025781c8fa1841079b75b54fce8408d039f73a48b7a81b
-Deleted: sha256:a476b265974ace4c857e3d88b358e848f126297a8249840c72d5f5ea1954a4bf
-Deleted: sha256:56722ee1ee7e73a5c6f96ea2959fa442fb4db9f044399bcd939bb0a6eb7919dc
-Deleted: sha256:c657df997c75f6c1a9c5cc683e8e34c6f29e5b4c1dee60b632d3477fd5fdd644
-Deleted: sha256:e9e1f772d2a8dbbeb6a4a4dcb4f0d07ff1c432bf94fac7a2db2216837bf9ec5b
-Deleted: sha256:02c055ef67f5904019f43a41ea5f099996d8e7633749b6e606c400526b2c4b33
-```
-
-- 使用镜像id
-
-```Bash
-[root@docker-server ~]# docker images
-REPOSITORY    TAG       IMAGE ID       CREATED        SIZE
-hello-world   latest    d1165f221234   3 months ago   13.3kB
-centos        latest    300e315adb2f   6 months ago   209MB
-mycentos      latest    300e315adb2f   6 months ago   209MB
-[root@docker-server ~]# docker rmi 300e315adb2f
-Error response from daemon: conflict: unable to delete 300e315adb2f (must be forced) - image is referenced in multiple repositories
-[root@docker-server ~]# docker rmi 300e315adb2f -f
-Untagged: centos:latest
-Untagged: centos@sha256:5528e8b1b1719d34604c87e11dcd1c0a20bedf46e83b5632cdeac91b8c04efc1
-Untagged: mycentos:latest
-Deleted: sha256:300e315adb2f96afe5f0b2780b87f28ae95231fe3bdd1e16b9ba606307728f55
-Deleted: sha256:2653d992f4ef2bfd27f94db643815aa567240c37732cae1405ad1c1309ee9859
-[root@docker-server ~]# docker images
-REPOSITORY    TAG       IMAGE ID       CREATED        SIZE
-hello-world   latest    d1165f221234   3 months ago   13.3kB
 ```
 
 
