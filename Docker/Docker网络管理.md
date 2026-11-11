@@ -438,3 +438,68 @@ LISTEN              0                   128                                     
 
 
 
+# 使用Docker-compose搭建一个Halo博客
+
+* 去官网查看Halo博客的Docker-compose使用指南
+
+```b
+services:
+  halo:
+    image: registry.fit2cloud.com/halo/halo-pro:2.27
+    restart: on-failure:3
+    depends_on:
+      halodb:
+        condition: service_healthy
+    networks:
+      halo_network:
+    volumes:
+      - ./halo2:/root/.halo2
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test:
+        ["CMD", "curl", "-f", "http://localhost:8090/actuator/health/readiness"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment:
+      # JVM 参数，默认为 -Xmx256m -Xms256m，可以根据实际情况做调整，置空表示不添加 JVM 参数
+      - JVM_OPTS=-Xmx256m -Xms256m
+    command:
+      - --spring.r2dbc.url=r2dbc:pool:postgresql://halodb/halo
+      - --spring.r2dbc.username=halo
+      # PostgreSQL 的密码，请保证与下方 POSTGRES_PASSWORD 的变量值一致。
+      - --spring.r2dbc.password=openpostgresql
+      - --spring.sql.init.platform=postgresql
+      # 外部访问地址，请根据实际需要修改
+      - --halo.external-url=http://localhost:8090/
+  halodb:
+    image: postgres:15.4
+    restart: on-failure:3
+    networks:
+      halo_network:
+    volumes:
+      - ./db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      - POSTGRES_PASSWORD=openpostgresql
+      - POSTGRES_USER=halo
+      - POSTGRES_DB=halo
+      - PGUSER=halo
+
+networks:
+  halo_network:
+```
+
+* 复制粘贴到，搭建好的dockge工具上
+
+![image-20261029142534013](C:\Users\asus\AppData\Roaming\Typora\typora-user-images\image-20261029142534013.png)
+
+* 访问对应的8090端口
+
+![image-20261029142659256](C:\Users\asus\AppData\Roaming\Typora\typora-user-images\image-20261029142659256.png)
