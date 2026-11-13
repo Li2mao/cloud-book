@@ -11,6 +11,8 @@ init容器与普通的容器非常像，除了如下两点：
 
 ## 检测initC的阻塞性
 
+* 在`k8s-resourcce`文件夹下面创建`02-initC.yml`
+
 ```yaml
 apiVersion: v1
 kind: Pod
@@ -29,11 +31,18 @@ spec:
     command: ['sh', '-c', 'echo The app is running && sleep 10']
   initContainers:
   - name: init-myservice
-    image: aaronxudocker/tools:busybox
+    image: busybox:latest
     command: ['sh', '-c', 'until nslookup myservice; do echo waiting for myservice; sleep 2; done;']
   - name: init-mydb
-    image: aaronxudocker/tools:busybox
+    image: busybox:latest
     command: ['sh', '-c', 'until nslookup mydb; do echo waiting for mydb; sleep 2; done;']
+
+# 启动命令
+[root@master k8s-resource]# kubectl apply -f 02-initC.yml
+# 检查运行情况
+[root@master k8s-resource]# kubectl describe pod initc-1
+# 持续查看完成情况
+[root@master k8s-resource]# kubectl get pod -w
 ```
 
 ```bash
@@ -93,6 +102,12 @@ initc-2   1/1     Running    1 (7s ago)   72s
 - initC多个之间是线性启动的，所以可以做一些延迟性的操作
 - initC无法定义readinessProbe，其它以外同应用容器定义无异
 
+最后删除这个pod
+
+```
+[root@master k8s-resource]# kubectl delete -f 02-initC.yml
+```
+
 # Pod探针
 
 探针是由kubelet对容器执行的定期诊断。要执行诊断，kubelet调用由容器实现的Handler。有三种类型的处理程序：
@@ -127,6 +142,8 @@ initc-2   1/1     Running    1 (7s ago)   72s
 #### 就绪探针实验
 
 - 基于 HTTP GET 方式
+  - 创建`03-readiness.yml`
+
 
 ```yaml
 apiVersion: v1
@@ -150,6 +167,9 @@ spec:
       limits:
         memory: "128Mi"
         cpu: "500m"
+        
+# 启动
+[root@master k8s-resource]# kubectl apply -f 03-readiness.yml 
 ```
 
 ```bash
@@ -171,6 +191,8 @@ readiness-httpget-pod   1/1     Running            0              5m40s
 ```
 
 - 基于 EXEC 方式
+  - 创建`04-readiness-exec-pod.yml`
+
 
 ```yaml
 apiVersion: v1
@@ -182,18 +204,27 @@ metadata:
 spec:
   containers:
   - name: readiness-exec-container
-    image: aaronxudocker/tools:busybox
+    image: nginx:latest
     imagePullPolicy: IfNotPresent
-    command: ["/bin/sh", "-c", "touch /tmp/live ; sleep 60; rm -rf /tmp/live; sleep 3600"]
     readinessProbe:
       exec:
-        command: ["test", "-e", "/tmp/live"]
+        command: ["sh", "-c", "[ -e /tmp/live ] || exit 1"]
       initialDelaySeconds: 1
       periodSeconds: 3
     resources:
       limits:
         memory: "128Mi"
         cpu: "500m"
+        
+# 启动命令
+[root@master k8s-resource]# kubectl apply -f 04-readiness-exec-pod.yml
+# 进入容器创建/tmp/live文件之后，发现k8s可以正常运行
+[root@master k8s-resource]# kubectl exec -it readiness-exec-pod -- bash
+# 检查进程
+[root@master k8s-resource]# kubectl get pod -w
+NAME                 READY   STATUS    RESTARTS   AGE
+readiness-exec-pod   0/1     Running   0          59s
+readiness-exec-pod   1/1     Running   0          3m3s
 ```
 
 ```bash
@@ -204,7 +235,8 @@ readiness-exec-pod   1/1     Running   0          7s
 readiness-exec-pod   0/1     Running   0          69s
 ```
 
-基于TCP Check方式
+* 基于TCP Check方式
+  * 创建`05-readiness-tcp.yml`
 
 ```yaml
 apiVersion: v1
@@ -220,23 +252,45 @@ spec:
     imagePullPolicy: IfNotPresent
     readinessProbe:
       tcpSocket:
-        port: 80
+        port: 81
       initialDelaySeconds: 1
       periodSeconds: 3
     resources:
       limits:
         memory: "128Mi"
         cpu: "500m"
+
+# 启动命令
+[root@master k8s-resource]# kubectl apply -f 05-readiness-tcp.yml
+# 进入容器创建/tmp/live文件之后，发现k8s可以正常运行
+[root@master k8s-resource]# kubectl exec -it readiness-tcp-pod -- bash
+# 修改nginx的默认端口为81
+root@readiness-tcp-pod:/# sed -i 's/listen[[:space:]]*80;/listen 81;/g' /etc/nginx/conf.d/default.conf
+root@readiness-tcp-pod:/# nginx -s reload
+# 检查进程
+[root@master k8s-resource]# kubectl get pod -w
+NAME                READY   STATUS    RESTARTS   AGE
+readiness-tcp-pod   0/1     Running   0          6s
+readiness-tcp-pod   1/1     Running   0          11m
+# 删除多余的服务
+[root@master k8s-resource]# kubectl get service
+NAME         TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
+kubernetes   ClusterIP   10.0.0.1        <none>        443/TCP   30h
+myservice    ClusterIP   10.14.251.166   <none>        80/TCP    105m
+[root@master k8s-resource]# kubectl  delete service myservice
+service "myservice" deleted
+[root@master k8s-resource]# kubectl delete -f 05-readiness-tcp.yml 
 ```
 
 #### 就绪探针流量测试
 
 <img src="Pod生命周期/image-20240906140721572.png" alt="image-20240906140721572" style="zoom: 25%;" />
 
-在匹配可用pod的时候，标签必须匹配，状态必须是就绪状态。
+* 在匹配可用pod的时候，标签必须匹配，状态必须是就绪状态。
+  * 创建`06-readiness-test.yml`
 
 ```yaml
-# pod-1.yaml
+[root@master k8s-resource]# cat 06-readiness-test.yml 
 apiVersion: v1
 kind: Pod
 metadata:
@@ -245,35 +299,30 @@ metadata:
     app: myapp
 spec:
   containers:
-  - name: myapp-1
+  - name: myapp
     image: nginx:latest
-    resources:
-      limits:
-        memory: "128Mi"
-        cpu: "500m"
 
-# pod-2.yaml
+---
+
 apiVersion: v1
 kind: Pod
 metadata:
   name: pod-2
   labels:
     app: myapp
-    version: v1
+    version: 1.0.0
 spec:
   containers:
-  - name: myapp-1
+  - name: myapp
     image: nginx:latest
-    resources:
-      limits:
-        memory: "128Mi"
-        cpu: "500m"
-        
- # 确认状态已经就绪
- $ kubectl get pod --show-labels
+
+# 启动命令
+[root@master k8s-resource]# kubectl apply -f 06-readiness-test.yml 
+# 确认状态就绪
+[root@master k8s-resource]# kubectl get pod --show-labels
 NAME    READY   STATUS    RESTARTS   AGE     LABELS
-pod-1   1/1     Running   0          2m31s   app=myapp
-pod-2   1/1     Running   0          32s     app=myapp,version=v1
+pod-1   1/1     Running   0          7m28s   app=myapp
+pod-2   1/1     Running   0          7m28s   app=myapp,version=1.0.0
 ```
 
 创建service资源
@@ -282,12 +331,12 @@ pod-2   1/1     Running   0          32s     app=myapp,version=v1
 # 注意myapp就是标签为app=myapp的pod
 # 此处不需要理解，后面会细讲，只是用来验证就绪探针对流量的影响
 # 此处的作用是形成多个pod的负载均衡
-$ kubectl create svc clusterip myapp --tcp=80:80
+[root@master k8s-resource]# kubectl create svc clusterip myapp --tcp=80:80
 service/myapp created
-$ kubectl get svc
-NAME         TYPE        CLUSTER-IP    EXTERNAL-IP   PORT(S)   AGE
-kubernetes   ClusterIP   10.0.0.1      <none>        443/TCP   46h
-myapp        ClusterIP   10.8.74.201   <none>        80/TCP    6s
+[root@master k8s-resource]# kubectl get svc
+NAME         TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
+kubernetes   ClusterIP   10.0.0.1       <none>        443/TCP   30h
+myapp        ClusterIP   10.3.139.189   <none>        80/TCP    7s
 ```
 
 将两个pod中的主页文件修改一下，用来作为区分
@@ -303,46 +352,77 @@ root@pod-2:/# echo pod-2 > /usr/share/nginx/html/index.html
 验证负载均衡的状态
 
 ```bash
-$ curl 10.8.74.201
+[root@master k8s-resource]# curl 10.3.139.189
 pod-2
-$ curl 10.8.74.201
+[root@master k8s-resource]# curl 10.3.139.189
 pod-1
-$ curl 10.8.74.201
-pod-2
+[root@master k8s-resource]# curl 10.3.139.189
+pod-1
 ```
 
-创建一个label为 `app: test` 的pod，看下是否能被匹配
+* 创建一个label为 `app: test` 的pod，看下是否能被匹配
+  * k8s是每个pod之间是幂等的，即使重新运行一遍，之前开启过的服务不会再重新启动
 
 ```yaml
-# 3.yaml
+[root@master k8s-resource]# cat 06-readiness-test.yml 
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-1
+  labels:
+    app: myapp
+spec:
+  containers:
+  - name: myapp
+    image: nginx:latest
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-2
+  labels:
+    app: myapp
+    version: 1.0.0
+spec:
+  containers:
+  - name: myapp
+    image: nginx:latest
+
+---
+
 apiVersion: v1
 kind: Pod
 metadata:
   name: pod-3
   labels:
     app: test
-    version: v1
+    version: 1.0.0
 spec:
   containers:
-  - name: myapp-1
+  - name: myapp
     image: nginx:latest
-    resources:
-      limits:
-        memory: "128Mi"
-        cpu: "500m"
+
+# 启动命令
+[root@master k8s-resource]# kubectl apply -f 06-readiness-test.yml 
+
 ```
 
 查看pod状态，修改 `pod-3` 的网页内容
 
 ```bash
-$ kubectl get pod --show-labels
-NAME    READY   STATUS    RESTARTS   AGE     LABELS
-pod-1   1/1     Running   0          11m     app=myapp
-pod-2   1/1     Running   0          9m57s   app=myapp,version=v1
-pod-3   1/1     Running   0          51s     app=test,version=v1
+[root@master k8s-resource]# kubectl get pod --show-labels
+NAME    READY   STATUS    RESTARTS   AGE    LABELS
+pod-1   1/1     Running   0          17m    app=myapp
+pod-2   1/1     Running   0          17m    app=myapp,version=1.0.0
+pod-3   1/1     Running   0          118s   app=test,version=1.0.0
 
-$ kubectl exec -it pod-3 -- /bin/bash
-root@pod-3:/# echo pod-3 > /usr/share/nginx/html/index.html
+
+[root@master k8s-resource]# kubectl exec -it pod-3 -- /bin/bash
+root@pod-3:/# echo pod-3 > /usr/share/nginx/html/index.html 
+# 检验
+[root@master k8s-resource]# while true;do curl 10.3.139.189;sleep 1;done
 ```
 
 验证负载均衡的状态,发现 `pod-3` 并不能被匹配上
@@ -362,19 +442,61 @@ $ curl 10.8.74.201
 pod-1
 ```
 
-创建一个不满足就绪条件的 `pod-4` 
+* 创建一个不满足就绪条件的 `pod-4` 
 
 ```yaml
+[root@master k8s-resource]# cat 06-readiness-test.yml 
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-1
+  labels:
+    app: myapp
+spec:
+  containers:
+  - name: myapp
+    image: nginx:latest
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-2
+  labels:
+    app: myapp
+    version: 1.0.0
+spec:
+  containers:
+  - name: myapp
+    image: nginx:latest
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-3
+  labels:
+    app: test
+    version: 1.0.0
+spec:
+  containers:
+  - name: myapp
+    image: nginx:latest
+
+---
+
 apiVersion: v1
 kind: Pod
 metadata:
   name: pod-4
   labels:
     app: myapp
-    version: v1
+    version: 1.0.0
 spec:
   containers:
-  - name: myapp-1
+  - name: myapp
     image: nginx:latest
     readinessProbe:
       httpGet:
@@ -382,10 +504,10 @@ spec:
         path: /index1.html
       initialDelaySeconds: 1
       periodSeconds: 3
-    resources:
-      limits:
-        memory: "128Mi"
-        cpu: "500m"
+
+
+# 启动
+[root@master k8s-resource]# kubectl apply -f 06-readiness-test.yml 
 ```
 
 修改主页内容
@@ -433,12 +555,13 @@ root@pod-4:/# touch /usr/share/nginx/html/index1.html
 再次验证负载均衡
 
 ```bash
-$ curl 10.8.74.201
-pod-1
-$ curl 10.8.74.201
-pod-2
-$ curl 10.8.74.201
+[root@master k8s-resource]# while true;do curl 10.3.139.189;sleep 1;done
 pod-4
+pod-1
+pod-2
+pod-4
+pod-1
+pod-1
 ```
 
 ### livenessProbe存活探针
@@ -455,21 +578,26 @@ pod-4
 #### 存活探针实验
 
 - 基于 Exec 方式
+  - 创建`07-liveness-exec.yml`
+
 
 ```yaml
+[root@master k8s-resource]# cat 07-liveness-exec.yml 
 apiVersion: v1
 kind: Pod
 metadata:
   name: liveness-exec-pod
+  labels:
+    name: myapp
 spec:
   containers:
   - name: liveness-exec-container
-    image: aaronxudocker/tools:busybox
+    image: nginx:latest
     imagePullPolicy: IfNotPresent
     command: ["/bin/sh", "-c", "touch /tmp/live; sleep 60; rm -rf /tmp/live; sleep 3600"]
     livenessProbe:
       exec:
-        command: ["test", "-e", "/tmp/live"]
+        command: ["/bin/sh", "-c", "[-e /tmp/live] || exit 1"]
       initialDelaySeconds: 1
       periodSeconds: 3
     resources:
@@ -489,12 +617,17 @@ liveness-exec-pod   1/1     Running   2 (1s ago)   3m20s
 ```
 
 - 基于 HTTP Get 方式
+  - 创建`08-liveness-httpget.yml`
+
 
 ```yaml
+[root@master k8s-resource]# cat 08-liveness-httpget.yml 
 apiVersion: v1
 kind: Pod
 metadata:
   name: liveness-httpget-pod
+  labels:
+    name: myapp
 spec:
   containers:
   - name: liveness-httpget-container
@@ -506,14 +639,14 @@ spec:
         path: /index.html
       initialDelaySeconds: 1
       periodSeconds: 3
-      timeoutSeconds: 3
     resources:
       limits:
         memory: "128Mi"
         cpu: "500m"
+
 ```
 
-删除 `index.html` 文件，使其不满足存活探测条件
+删除 `index.html` 文件，使其不满足存活探测条件，此时会重新拉起服务，导致容器重启
 
 ```bash
 # 在删除index.html之后，可以看到命令行退出了
@@ -539,12 +672,17 @@ $ docker ps -a |grep liveness-exec-container
 ```
 
 - 基于 TCP Check 方式
+  - 创建`09-liveness-tcp.yml`
+
 
 ```yaml
+[root@master k8s-resource]# cat 09-liveness-tcp.yml 
 apiVersion: v1
 kind: Pod
 metadata:
   name: liveness-tcp-pod
+  labels:
+    name: myapp
 spec:
   containers:
   - name: liveness-tcp-container
@@ -555,11 +693,15 @@ spec:
         port: 80
       initialDelaySeconds: 1
       periodSeconds: 3
-      timeoutSeconds: 3
     resources:
       limits:
         memory: "128Mi"
         cpu: "500m"
+
+# 验证命令
+[root@master k8s-resource]# kubectl exec -it liveness-tcp-pod -- /bin/bash
+root@liveness-tcp-pod:/# sed -i 's/listen[[:space:]]*80;/listen 81;/g' /etc/nginx/conf.d/default.conf
+root@liveness-tcp-pod:/# nginx -s reload
 ```
 
 ### startupProbe启动探针
@@ -575,34 +717,36 @@ spec:
 
 #### 启动探针实验
 
+* 创建`10-startup.yml`
+
 ```yaml
+[root@master k8s-resource]# cat 10-startup.yml 
 apiVersion: v1
 kind: Pod
 metadata:
-  name: startupprobe-1
+  name: startup-pod
+  labels:
+    name: myapp
 spec:
   containers:
-  - name: startupprobe
+  - name: startup-container
     image: nginx:latest
     imagePullPolicy: IfNotPresent
-    readinessProbe:
-      httpGet:
-        port: 80
-        path: /index2.html
-      initialDelaySeconds: 1
-      periodSeconds: 3
     startupProbe:
       httpGet:
-        path: /index1.html
         port: 80
-      periodSeconds: 10
-      failureThreshold: 30
+        path: /index1.html
+      initialDelaySeconds: 1
+      periodSeconds: 3
+    livenessProbe:
+      tcpSocket:
+        port: 80
+      initialDelaySeconds: 1
+      periodSeconds: 3
     resources:
       limits:
         memory: "128Mi"
         cpu: "500m"
-        
-# 应用程序将会有最多 5 分钟 failureThreshold * periodSeconds（30 * 10 = 300s）的时间来完成其启动过程。如果到超时都没有启动完成，就会重启。
 ```
 
 创建 `index1.html` 文件
@@ -648,15 +792,20 @@ Hook的类型包括两种：
 ## Pod钩子实验
 
 - 基于 exec 方式
+  - 创建`11-hook.yml`
+
 
 ```yaml
+[root@master k8s-resource]# cat 11-hook.yml 
 apiVersion: v1
 kind: Pod
 metadata:
-  name: hook-exec-pod
+  name: startup-pod
+  labels:
+    name: myapp
 spec:
   containers:
-  - name: hook-exec-container
+  - name: startup-container
     image: nginx:latest
     imagePullPolicy: IfNotPresent
     lifecycle:
@@ -666,10 +815,7 @@ spec:
       preStop:
         exec:
           command: ["/bin/sh", "-c", "echo preStart > /usr/share/message"]
-    resources:
-      limits:
-        memory: "128Mi"
-        cpu: "500m"
+
 ```
 
 在这个pod的内部，写一个循环查看此文件的shell命令
@@ -685,10 +831,14 @@ root@hook-exec-pod:/# while true;
 ```
 
 - 基于 HTTP Get 方式
+  - 编辑`11-hook.yml`
+
 
 ```bash
 # 开启一个测试 webserver
 $ docker run -it --rm -p 1234:80 nginx:latest
+# 或者在windows的cmd开启python的服务端测试
+C:\Users\asus>python -m http.server 8080
 ```
 
 启动一个pod，然后再删除，查看nginx容器日志，可以看到记录了这两次的http请求
