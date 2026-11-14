@@ -17,7 +17,10 @@
 
 ​	在新版本的Kubernetes中建议使⽤ReplicaSet(RS)来取代ReplicationController。ReplicaSet跟ReplicationController没有本质的不同，只是名字不⼀样，并且ReplicaSet⽀持集合式的selector；
 
+* 创建`12-rc.yml`
+
 ```yaml
+[root@master k8s-resource]# cat 12-rc.yml 
 apiVersion: v1
 kind: ReplicationController
 metadata:
@@ -34,17 +37,35 @@ spec:
     spec:
       containers:
         - name: rc-demo-container
-          image: aaronxudocker/myapp:v1.0
+          image: nginx:latest
           ports:
             - containerPort: 80
-            
-# kubectl delete pod rc-demo-fl7vb
-# kubectl label pod rc-demo-fl7vb app=rc-demo1 --overwrite
+
+# 检验RC            
+[root@master k8s-resource]# kubectl get pod
+NAME            READY   STATUS    RESTARTS   AGE
+rc-demo-jd6r8   1/1     Running   0          26s
+rc-demo-qxqpl   1/1     Running   0          26s
+rc-demo-x84gv   1/1     Running   0          26s
+[root@master k8s-resource]# kubectl delete pod rc-demo-jd6r8
+pod "rc-demo-jd6r8" deleted
+[root@master k8s-resource]# kubectl get pod
+NAME            READY   STATUS              RESTARTS   AGE
+rc-demo-p2ctz   0/1     ContainerCreating   0          3s
+rc-demo-qxqpl   1/1     Running             0          41s
+rc-demo-x84gv   1/1     Running             0          41s
+# 查看rc
+[root@master k8s-resource]# kubectl get rc
+NAME      DESIRED   CURRENT   READY   AGE
+rc-demo   3         3         3       85s
+# 删除rc
+[root@master k8s-resource]# kubectl delete rc rc-demo
 ```
 
 RS控制器
 
 ```yaml
+[root@master k8s-resource]# cat 13-rs.yml 
 apiVersion: apps/v1
 kind: ReplicaSet
 metadata:
@@ -59,12 +80,14 @@ spec:
       name: rc-ml-demo
       labels:
         app: rc-ml-demo
+        version: 1.0.0
     spec:
       containers:
         - name: rc-ml-demo-container
-          image: aaronxudocker/myapp:v1.0
+          image: nginx:latest
           ports:
             - containerPort: 80
+
 ```
 
 `selector.matchExpressions` 
@@ -75,12 +98,15 @@ rs在标签选择器上，除了可以定义键值对的选择形式，还支持
 - NotIn：label的值不在某个列表中
 - Exists：某个label存在
 - DoesNotExist：某个label不存在
+- `kubectl edit pod pod名称`方便实时编辑
 
 ```yaml
+# 只匹配存在key
+[root@master k8s-resource]# cat 13-rs.yml 
 apiVersion: apps/v1
 kind: ReplicaSet
 metadata:
-  name: rc-me-demo
+  name: rc-ml-demo
 spec:
   replicas: 3
   selector:
@@ -89,22 +115,25 @@ spec:
         operator: Exists
   template:
     metadata:
-      name: rc-me-demo
+      name: rc-ml-demo
       labels:
-        app: rc-me-demo
+        app: rc-ml-demo
+        version: 1.0.0
     spec:
       containers:
-        - name: rc-me-demo-container
-          image: aaronxudocker/myapp:v1.0
+        - name: rc-ml-demo-container
+          image: nginx:latest
           ports:
             - containerPort: 80
+
 ```
 
 ```yaml
+[root@master k8s-resource]# cat 13-rs.yml 
 apiVersion: apps/v1
 kind: ReplicaSet
 metadata:
-  name: rc-me-in-demo
+  name: rc-ml-demo
 spec:
   replicas: 3
   selector:
@@ -112,19 +141,21 @@ spec:
       - key: app
         operator: In
         values:
-        - spring-k8s
-        - xixixi
+        - 2.0.0
+        - 1.0.0
   template:
     metadata:
-      name: rc-me-in-demo
+      name: rc-ml-demo
       labels:
-        app: rc-me-in-demo
+        app: 2.0.0
+        version: 1.0.0
     spec:
       containers:
-        - name: rc-me-in-demo-container
-          image: aaronxudocker/myapp:v1.0
+        - name: rc-ml-demo-container
+          image: nginx:latest
           ports:
             - containerPort: 80
+
 ```
 
 # Deployment
@@ -168,10 +199,11 @@ Deployment为Pod和ReplicaSet提供了⼀个声明式定义(declarative)⽅法�
 <img src="Pod控制器/image-20240911095809938.png" alt="image-20240911095809938" style="zoom: 50%;" />
 
 ```yaml
+[root@master k8s-resource]# cat 14-deploy.yml 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  labels: 
+  labels:
     app: myapp-deploy
   name: myapp-deploy
 spec:
@@ -183,10 +215,10 @@ spec:
     metadata:
       labels:
         app: myapp-deploy
-    spec:
+    spec: 
       containers:
       - name: myapp
-        image: aaronxudocker/myapp:v1.0
+        image: nginx:1.28.0
         resources:
           limits:
             memory: "128Mi"
@@ -217,17 +249,23 @@ kubectlexplaindeploy.spec.strategy.type
 
 
 ```bash
+# 创建deployment资源，--record 记录本次操作，方便查看版本修订历史
 $ kubectl create -f deployment.yaml --record
-# --record 参数可以记录命令，可以看到每次revision的变化
+[root@master k8s-resource]# kubectl apply -f 14-deploy.yml --record
 
+# 扩容deployment副本数为10个
 $ kubectl scale deployment myapp-deploy --replicas 10
 
+# 为deployment创建HPA自动扩缩容，最小10副本、最大15副本，CPU使用率阈值80%
 $ kubectl autoscale deployment myapp-deploy --min=10 --max=15 --cpu-percent=80
 
-$ kubectl set image deployment/myapp-deploy myapp=aaronxudocker/myapp:v2.0
+# 更新deployment里myapp容器镜像为v2.0版本，触发滚动更新
+$ kubectl set image deployment/myapp-deploy myapp=nginx:1.29.0
 
+# 查看deployment的滚动更新版本历史记录
 $ kubectl rollout history deployment/myapp-deploy
 
+# 回滚到上一个版本
 $ kubectl rollout undo deployment/myapp-deploy
 ```
 
@@ -244,8 +282,9 @@ $ kubectl rollout undo deployment/myapp-deploy
 ```bash
 $ kubectl patch deployment myapp-deploy -p '{"spec":{"strategy":{"rollingUpdate":{"maxSurge":1,"maxUnavailable":0}}}}'
 # 允许pod多出预期1个，不允许少一个
+# 也可以使用kubectl edit deploy 名称 的形式进行编辑
 
-$ kubectl patch deployment myapp-deploy --patch '{"spec": {"template": {"spec": {"containers": [{"name": "myapp","image":"aaronxudocker/myapp:v2.0"}]}}}}'   &&  kubectl rollout pause deploy  myapp-deploy
+$ kubectl patch deployment myapp-deploy --patch '{"spec": {"template": {"spec": {"containers": [{"name": "myapp","image":"nginx:1.29.0"}]}}}}'   &&  kubectl rollout pause deploy  myapp-deploy
 # 修改镜像为v2.0版本，并且立马停止回滚，可以看到pod数量复合上面的设置
 
 $ kubectl rollout resume deploy myapp-deploy
