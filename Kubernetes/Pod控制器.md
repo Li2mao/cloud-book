@@ -315,6 +315,8 @@ DaemonSet确保全部（或者⼀些）Node上运⾏⼀个Pod的副本。当有N
 - 运⾏集群存储daemon，例如在每个Node上运⾏`glusterd`、`ceph`
 - 在每个Node上运⾏⽇志收集daemon，例如`fluentd`、`logstash`
 - 在每个Node上运⾏监控daemon，例如PrometheusNode Exporter、`collectd`、Datadog代理、NewRelic代理，或Ganglia`gmond`
+  - 创建`15-daemonset.yml`
+
 
 ```yaml
 apiVersion: apps/v1
@@ -349,10 +351,14 @@ Job负责批处理任务，即仅执⾏⼀次的任务，它保证批处理任�
 - `.spec.completions`标志Job结束需要成功运⾏的Pod个数，默认为1
 - `.spec.parallelism`标志并⾏运⾏的Pod的个数，默认为1
 - `spec.activeDeadlineSeconds`标志失败Pod的重试最⼤时间，超过这个时间不会继续重试
+- `backoffLimit`最大失败次数，默认是6次，达到此次数后就不再尝试创建
 
 案例：使用马青公式计算圆周率后一千位，可以用来看下节点的计算能力
 
 ​	这个公式由英国天文学教授约翰·⻢青于1706年发现。他利⽤这个公式计算到了100位的圆周率。⻢青公式每计算⼀项可以得到1.4位的⼗进制精度。因为它的计算过程中被乘数和被除数都不⼤于⻓整数，所以可以很容易地在计算机上编程实现
+
+* 创建`16-job.yml`
+
 $$
 \frac{\pi}{4} = 4 \tan^{-1}\left(\frac{1}{5}\right) - \tan^{-1}\left(\frac{1}{239}\right)
 $$
@@ -376,6 +382,8 @@ spec:
 Job负责批处理任务，即仅执⾏⼀次的任务，它保证批处理任务的⼀个或多个Pod成功结束
 
 ## 错误的Job任务
+
+* 创建`17-job-error.yml`																											
 
 ```yaml
 apiVersion: batch/v1
@@ -405,13 +413,15 @@ rand   0/1           30s        30s
 改为产生随机返回值
 
 ```yaml
+[root@master k8s-resource]# kubectl apply -f 17-job-error.yml 
+job.batch/rand created
+[root@master k8s-resource]# cat 17-job-error.yml 
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: rand
 spec:
-  completions: 10
-  parallelism: 5
+  backoffLimit: 100
   template:
     metadata:
       name: rand
@@ -420,6 +430,8 @@ spec:
       - name: rand
         image: aaronxudocker/tools:randexitv1
       restartPolicy: Never
+  completions: 10
+  parallelism: 5
 ```
 
 可以看到并行启动5个pod，直到成功为止
@@ -497,6 +509,11 @@ spec:
             - -c
             - date; echo Hello from the Kubernetes cluster
           restartPolicy: OnFailure
+  
+# 查看cronjob
+[root@master k8s-resource]# kubectl get cronjob
+NAME           SCHEDULE      SUSPEND   ACTIVE   LAST SCHEDULE   AGE
+cronjob-demo   */1 * * * *   False     1        11s             22s
 ```
 
 创建job操作应该是幂等的
@@ -520,8 +537,15 @@ error: Metrics API not available
 安装metrics-server
 
 ```bash
-$ wget https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml
+# 上传安装包metrics-server.tar.gz到服务器
+# 导入安装包
+[root@master ~]# docker load -i metrics-server.tar.gz
+[root@master ~]# scp metrics-server.tar.gz root@node01:/root
+[root@master ~]# scp metrics-server.tar.gz root@node02:/root
+# 下载配置文件
+wget https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml
 
+[root@master ~]# vim components.yaml 
 # 修改配置文件
 - args:
   - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname,InternalDNS,ExternalDNS
@@ -532,6 +556,9 @@ $ kubectl apply -f components.yaml
 
 $ kubectl get pod -n kube-system |grep metrics
 metrics-server-5c7fbc6ff6-fssfd            1/1     Running   0             2m42s
+
+# 启动
+[root@master ~]# kubectl apply -f components.yaml 
 
 # 使用kubectl top node 查看资源使用情况
 $ kubectl top node
@@ -548,6 +575,7 @@ myapp-deploy-57bff895d5-cvlmg   0m           4Mi
 准备deployment和service资源
 
 ```yaml
+[root@master k8s-resource]# cat 19-hpa.yml 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -570,74 +598,101 @@ spec:
             cpu: "1"
           requests:
             cpu: "100m"
+[root@master k8s-resource]# kubectl apply -f 19-hpa.yml 
 ```
 
 创建service并且查看
 
 ```bash
 $ kubectl expose deployment nginx --type=NodePort --port=80
+[root@master k8s-resource]# kubectl get svc
+NAME         TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE
+kubernetes   ClusterIP   10.0.0.1       <none>        443/TCP        8d
+myapp        ClusterIP   10.3.139.189   <none>        80/TCP         6d22h
+nginx        NodePort    10.11.235.10   <none>        80:32271/TCP   6s
+# 此时可以访问
+http://192.168.198.100:32271/
+http://192.168.198.101:32271/
+http://192.168.198.102:32271/
 
-$ kubectl get deployment,pod,svc
-NAME                           READY   UP-TO-DATE   AVAILABLE   AGE
-deployment.apps/nginx          1/1     1            1           114s
+[root@master k8s-resource]# kubectl get deployment,pod,svc
+NAME                    READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/nginx   1/1     1            1           9m6s
 
-NAME                                READY   STATUS    RESTARTS   AGE
-pod/nginx-7b4664bb57-pgllw          1/1     Running   0          114s
+NAME                         READY   STATUS    RESTARTS   AGE
+pod/nginx-7b4664bb57-f6gcf   1/1     Running   0          9m6s
 
-NAME                 TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)        AGE
-service/nginx        NodePort    10.8.51.98   <none>        80:30482/TCP   37s
+NAME                 TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE
+service/kubernetes   ClusterIP   10.0.0.1       <none>        443/TCP        8d
+service/myapp        ClusterIP   10.3.139.189   <none>        80/TCP         6d22h
+service/nginx        NodePort    10.11.235.10   <none>        80:32271/TCP   7m22s
+
 ```
 
 创建HPA资源
 
 ```yaml
+[root@master k8s-resource]# kubectl delete hpa myapp-deploy
+horizontalpodautoscaler.autoscaling "myapp-deploy" deleted
+[root@master k8s-resource]# kubectl get hpa
+NAME       REFERENCE          TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
+hpa-demo   Deployment/nginx   <unknown>/10%   1         10        0          4m39s
+[root@master k8s-resource]# cat 20-hpa.yml 
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: hpa-demo
 spec:
-  minReplicas: 1  #最小pod数量
-  maxReplicas: 10 #最大pod数量
+  minReplicas: 1
+  maxReplicas: 10
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 10 # 在连续10秒内稳定后才考虑进一步扩展操作
+      stabilizationWindowSeconds: 10
       policies:
       - type: Percent
-        value: 100 # 当超过当前副本数的100%才进行扩展 
-        periodSeconds: 3 # 两次扩容之间的最小时间间隔
+        value: 80
+        periodSeconds: 3
     scaleDown:
-      stabilizationWindowSeconds: 300 # 在连续300秒内稳定后才考虑缩减操作
+      stabilizationWindowSeconds: 10
       policies:
       - type: Percent
-        value: 10 # 当低于当前副本数的10%才进行缩减 
-        periodSeconds: 3 # 两次缩减之间的最小时间间隔
+        value: 30
+        periodSeconds: 3
   metrics:
   - type: Resource
     resource:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 10 # CPU平均利用率目标设为10%
-  scaleTargetRef:   # 指定要控制的nginx信息
+        averageUtilization: 10
+  scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
     name: nginx
+
 ```
 
 查看hpa资源
 
 ```bash
-$ kubectl get hpa -w
-NAME       REFERENCE          TARGETS   MINPODS   MAXPODS   REPLICAS   AGE
-hpa-demo   Deployment/nginx   0%/10%    1         10        1          20s
+[root@master k8s-resource]# kubectl get hpa
+NAME       REFERENCE          TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
+hpa-demo   Deployment/nginx   <unknown>/10%   1         10        0          4m39s
 ```
 
 使用压力测试工具
 
-```bash
-$ ab -c 1000 -n 1000000 http://192.168.173.100:30482/
+* 这里要记得开启19的程序
 
-$ kubectl get hpa -w
+```bash
+[root@master k8s-resource]# yum -y install httpd-tools
+# 另起窗口实时监测
+[root@master k8s-resource]# kubectl get pod -w
+[root@master k8s-resource]# kubectl top pod
+
+[root@master k8s-resource]# ab -c 1000 -n 1000000 http://192.168.198.100:32271/
+
+[root@master k8s-resource]# kubectl get hpa -w
 NAME       REFERENCE          TARGETS   MINPODS   MAXPODS   REPLICAS   AGE
 hpa-demo   Deployment/nginx   0%/10%    1         10        1          20s
 hpa-demo   Deployment/nginx   1%/10%    1         10        1          105s
@@ -652,7 +707,7 @@ hpa-demo   Deployment/nginx   68%/10%    1         10        10         3m15s
 压力测试停止之后
 
 ```bash
-$ kubectl get hpa -w
+[root@master k8s-resource]# kubectl get hpa -w
 NAME       REFERENCE          TARGETS   MINPODS   MAXPODS   REPLICAS   AGE
 hpa-demo   Deployment/nginx   0%/10%     1         10        10         8m45s
 hpa-demo   Deployment/nginx   0%/10%     1         10        9          9m

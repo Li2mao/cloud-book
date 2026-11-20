@@ -63,47 +63,67 @@ spec:
 ```
 
 ```bash
+# 可以删除之前创建的service
+[root@master k8s-resource]# kubectl get svc
+NAME         TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE
+kubernetes   ClusterIP   10.0.0.1       <none>        443/TCP        9d
+myapp        ClusterIP   10.3.139.189   <none>        80/TCP         8d
+nginx        NodePort    10.11.235.10   <none>        80:32271/TCP   38h
+[root@master k8s-resource]# kubectl delete svc nginx
+[root@master k8s-resource]# kubectl delete svc myapp
+
 # 启动一个负载均衡的service
-$ kubectl create svc clusterip myapp-deploy --tcp=80:80
+[root@master k8s-resource]# kubectl create svc clusterip myapp-deploy --tcp=80:80
 
 # 修改ipvs
-$ kubectl edit configmap kube-proxy -n kube-system
+[root@master k8s-resource]# kubectl edit configmap kube-proxy -n kube-system
+
 mode: "ipvs"
 
 # 删除kube-proxy的pod
-$ kubectl delete pod -n kube-system -l k8s-app=kube-proxy
-pod "kube-proxy-ckwsj" deleted
-pod "kube-proxy-t729f" deleted
-pod "kube-proxy-z6dt8" deleted
+[root@master k8s-resource]# kubectl delete pod -n kube-system -l k8s-app=kube-proxy
+pod "kube-proxy-2mbl7" deleted
+pod "kube-proxy-z296g" deleted
+pod "kube-proxy-z76d8" deleted
+
 
 # 查看pod创建的状态
-$ kubectl get pod -n kube-system -l k8s-app=kube-proxy
+[root@master k8s-resource]# kubectl get pod -n kube-system -l k8s-app=kube-proxy
 NAME               READY   STATUS    RESTARTS   AGE
-kube-proxy-948s5   1/1     Running   0          3s
-kube-proxy-ggpwj   1/1     Running   0          3s
-kube-proxy-v7lgs   1/1     Running   0          3s
+kube-proxy-285sw   1/1     Running   0          21s
+kube-proxy-4mmtg   1/1     Running   0          21s
+kube-proxy-fnc2r   1/1     Running   0          21s
+
 
 # 查看虚拟IP地址
-$ kubectl get svc
-NAME           TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
-myapp-deploy   ClusterIP   10.9.86.78   <none>        80/TCP    6m54s
+[root@master k8s-resource]# kubectl get svc
+NAME           TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
+kubernetes     ClusterIP   10.0.0.1       <none>        443/TCP   9d
+myapp-deploy   ClusterIP   10.2.217.195   <none>        80/TCP    8m2s
+
 
 # 查看ipvsadm的状态
-$ ipvsadm -Ln
+[root@master k8s-resource]# ipvsadm -Ln
 IP Virtual Server version 1.2.1 (size=4096)
 Prot LocalAddress:Port Scheduler Flags
   -> RemoteAddress:Port           Forward Weight ActiveConn InActConn      
-TCP  10.9.86.78:80 rr
-  -> 10.244.140.106:80            Masq    1      0          0         
-  -> 10.244.196.141:80            Masq    1      0          0         
-  -> 10.244.196.142:80            Masq    1      0          0
-  
+TCP  10.2.217.195:80 rr
+  -> 10.244.140.98:80             Masq    1      0          0         
+  -> 10.244.140.100:80            Masq    1      0          0         
+  -> 10.244.196.133:80            Masq    1      0          0   
 # 负载均衡的地址正好对应着pod的ip地址
-$ kubectl get pod -o wide
-NAME                            READY   STATUS    RESTARTS   AGE   IP               NODE     NOMINATED NODE   READINESS
-myapp-deploy-57bff895d5-b2hhk   1/1     Running   0          73s   10.244.196.142   node01   <none>           <none>
-myapp-deploy-57bff895d5-fbln4   1/1     Running   0          73s   10.244.140.106   node02   <none>           <none>
-myapp-deploy-57bff895d5-frnfd   1/1     Running   0          73s   10.244.196.141   node01   <none>           <none>
+[root@master k8s-resource]# kubectl get pod -o wide
+NAME                            READY   STATUS    RESTARTS   AGE   IP               NODE     NOMINATED NODE   READINESS GATES
+myapp-deploy-57bff895d5-8flvx   1/1     Running   0          15m   10.244.140.100   node02   <none>           <none>
+myapp-deploy-57bff895d5-bkt9b   1/1     Running   0          15m   10.244.140.98    node02   <none>           <none>
+myapp-deploy-57bff895d5-vpg6c   1/1     Running   0          15m   10.244.196.133   node01   <none>           <none>
+
+# 具体查看负载均衡的实施
+[root@master k8s-resource]# while true;do curl 10.2.217.195/hostname.html; done
+myapp-deploy-57bff895d5-vpg6c
+myapp-deploy-57bff895d5-bkt9b
+myapp-deploy-57bff895d5-8flvx
+
 ```
 
 # Service资源清单
@@ -174,24 +194,32 @@ spec:
             cpu: "500m"
         ports:
         - containerPort: 80
+        
+# 记得删除之前创建的svc
+[root@master k8s-resource]# kubectl get svc
+NAME           TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
+kubernetes     ClusterIP   10.0.0.1       <none>        443/TCP   10d
+myapp-deploy   ClusterIP   10.2.217.195   <none>        80/TCP    5h55m
+[root@master k8s-resource]# kubectl delete svc myapp-deploy
 ```
 
 测试三个pod
 
 ```bash
-$ kubectl get pod -o wide
-NAME                            READY   STATUS    RESTARTS   AGE   IP               NODE     NOMINATED NODE   READINESS GATES
-myapp-deploy-57bff895d5-b2hhk   1/1     Running   0          30m   10.244.196.142   node01   <none>           <none>
-myapp-deploy-57bff895d5-fbln4   1/1     Running   0          30m   10.244.140.106   node02   <none>           <none>
-myapp-deploy-57bff895d5-frnfd   1/1     Running   0          30m   10.244.196.141   node01   <none>           <none>
+[root@master k8s-resource]# kubectl get pod -o wide
+NAME                            READY   STATUS    RESTARTS   AGE    IP               NODE     NOMINATED NODE   READINESS GATES
+myapp-deploy-57bff895d5-8flvx   1/1     Running   0          6h3m   10.244.140.100   node02   <none>           <none>
+myapp-deploy-57bff895d5-bkt9b   1/1     Running   0          6h3m   10.244.140.98    node02   <none>           <none>
+myapp-deploy-57bff895d5-vpg6c   1/1     Running   0          6h3m   10.244.196.133   node01   <none>           <none>
 
 # 查看一下访问情况
-$ curl 10.244.196.142/hostname.html
-myapp-deploy-57bff895d5-b2hhk
-$ curl 10.244.140.106/hostname.html
-myapp-deploy-57bff895d5-fbln4
-$ curl 10.244.196.141/hostname.html
-myapp-deploy-57bff895d5-frnfd
+[root@master k8s-resource]# curl 10.13.153.75/hostname.html
+myapp-deploy-57bff895d5-bkt9b
+[root@master k8s-resource]# curl 10.13.153.75/hostname.html
+myapp-deploy-57bff895d5-8flvx
+[root@master k8s-resource]# curl 10.13.153.75/hostname.html
+myapp-deploy-57bff895d5-vpg6c
+
 ```
 
 ## ClusterIP类型的Service
@@ -214,11 +242,13 @@ spec:
 查看运行结果
 
 ```bash
-$ kubectl get svc
+[root@master k8s-resource]# kubectl get svc
 NAME                TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
-service-clusterip   ClusterIP   10.13.125.29   <none>        80/TCP    22s
+kubernetes          ClusterIP   10.0.0.1       <none>        443/TCP   10d
+service-clusterip   ClusterIP   10.13.153.75   <none>        80/TCP    2m9s
 
-$ kubectl describe svc service-clusterip 
+
+[root@master k8s-resource]# kubectl describe svc service-clusterip
 Name:              service-clusterip
 Namespace:         default
 Labels:            <none>
@@ -227,30 +257,28 @@ Selector:          app=myapp-deploy
 Type:              ClusterIP
 IP Family Policy:  SingleStack
 IP Families:       IPv4
-IP:                10.13.125.29
-IPs:               10.13.125.29
+IP:                10.13.153.75
+IPs:               10.13.153.75
 Port:              <unset>  80/TCP
 TargetPort:        80/TCP
-Endpoints:         10.244.140.106:80,10.244.196.141:80,10.244.196.142:80
+Endpoints:         10.244.140.100:80,10.244.140.98:80,10.244.196.133:80
 Session Affinity:  None
 Events:            <none>
 
-$ ipvsadm -Ln
+
 IP Virtual Server version 1.2.1 (size=4096)
 Prot LocalAddress:Port Scheduler Flags
-  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn     
-TCP  10.13.125.29:80 rr
-  -> 10.244.140.106:80            Masq    1      0          0         
-  -> 10.244.196.141:80            Masq    1      0          0         
-  -> 10.244.196.142:80            Masq    1      0          0     
-  
-$ while true;do curl 10.13.125.29/hostname.html; done
-myapp-deploy-57bff895d5-b2hhk
-myapp-deploy-57bff895d5-frnfd
-myapp-deploy-57bff895d5-fbln4
-myapp-deploy-57bff895d5-b2hhk
-myapp-deploy-57bff895d5-frnfd
-myapp-deploy-57bff895d5-fbln4
+  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
+
+TCP  10.13.153.75:80 rr
+  -> 10.244.140.98:80             Masq    1      0          2         
+  -> 10.244.140.100:80            Masq    1      0          1         
+  -> 10.244.196.133:80            Masq    1      0          1   
+[root@master k8s-resource]# while true;do curl 10.13.153.75/hostname.html; done
+myapp-deploy-57bff895d5-8flvx
+myapp-deploy-57bff895d5-vpg6c
+myapp-deploy-57bff895d5-bkt9b
+
 ```
 
 ## Endpoint
@@ -262,18 +290,20 @@ myapp-deploy-57bff895d5-fbln4
 <img src="Service/image-20240912172501813.png" alt="image-20240912172501813" style="zoom:33%;" />
 
 ```bash
-$ kubectl get endpoints -o wide
-NAME                ENDPOINTS                                               AGE
-service-clusterip   10.244.140.106:80,10.244.196.141:80,10.244.196.142:80   6m27s
+[root@master k8s-resource]# kubectl get endpoints -o wide
+NAME                ENDPOINTS                                              AGE
+kubernetes          192.168.198.100:6443                                   10d
+service-clusterip   10.244.140.100:80,10.244.140.98:80,10.244.196.133:80   4m39s
 ```
 
 在deployment中添加一个就绪探测
 
 ```yaml
+[root@master k8s-resource]# cat 21-svc-1.yml 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  labels: 
+  labels:
     app: myapp-deploy
   name: myapp-deploy
 spec:
@@ -293,52 +323,68 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "500m"
+        ports:
+        - containerPort: 80
         readinessProbe:
           httpGet:
             port: 80
             path: /index1.html
           initialDelaySeconds: 1
           periodSeconds: 3
-        ports:
-        - containerPort: 80
+
 ```
 
 在不满足就绪探测的情况下，是不会被endpoint采用的
 
 ```bash
-$ kubectl get pod
-NAME                            READY   STATUS    RESTARTS   AGE
-myapp-deploy-659f9975b8-2sntn   0/1     Running   0          40s
-myapp-deploy-659f9975b8-nd66b   0/1     Running   0          40s
-myapp-deploy-659f9975b8-p4j5k   0/1     Running   0          40s
+[root@master k8s-resource]# kubectl get pod
+NAME                            READY   STATUS        RESTARTS   AGE
+myapp-deploy-57bff895d5-8flvx   1/1     Terminating   0          6h10m
+myapp-deploy-57bff895d5-bkt9b   1/1     Terminating   0          6h10m
+myapp-deploy-57bff895d5-vpg6c   1/1     Terminating   0          6h10m
+myapp-deploy-659f9975b8-6fxxb   0/1     Running       0          17s
+myapp-deploy-659f9975b8-pmltx   0/1     Running       0          17s
+myapp-deploy-659f9975b8-sfx8q   0/1     Running       0          17s
 
-$ kubectl get endpoints
+
+[root@master k8s-resource]# kubectl get endpoints
 NAME                ENDPOINTS              AGE
-service-clusterip                          10s
+kubernetes          192.168.198.100:6443   10d
+service-clusterip                          8m26s
 ```
 
 满足了就绪探测和标签被匹配上的pod会被加入endpoint中
 
 ```bash
-$ kubectl exec -it myapp-deploy-659f9975b8-2sntn -- /bin/bash
-root@myapp-deploy-659f9975b8-2sntn:/# echo "hello world" > /usr/share/nginx/html/index1.html
-
-$ kubectl get pod
+[root@master k8s-resource]# kubectl get pod
 NAME                            READY   STATUS    RESTARTS   AGE
-myapp-deploy-659f9975b8-2sntn   1/1     Running   0          3m4s
-myapp-deploy-659f9975b8-nd66b   0/1     Running   0          3m4s
-myapp-deploy-659f9975b8-p4j5k   0/1     Running   0          3m4s
+myapp-deploy-659f9975b8-6fxxb   0/1     Running   0          100s
+myapp-deploy-659f9975b8-pmltx   0/1     Running   0          100s
+myapp-deploy-659f9975b8-sfx8q   0/1     Running   0          100s
+[root@master k8s-resource]# kubectl exec -it myapp-deploy-659f9975b8-6fxxb -- bash
+root@myapp-deploy-659f9975b8-6fxxb:/# echo web > /usr/share/nginx/html/index1.html
+root@myapp-deploy-659f9975b8-6fxxb:/# exit
 
-$ kubectl get endpoints 
+
+[root@master k8s-resource]# kubectl get pod
+NAME                            READY   STATUS    RESTARTS   AGE
+myapp-deploy-659f9975b8-6fxxb   1/1     Running   0          2m26s
+myapp-deploy-659f9975b8-pmltx   0/1     Running   0          2m26s
+myapp-deploy-659f9975b8-sfx8q   0/1     Running   0          2m26s
+
+
+[root@master k8s-resource]# kubectl get endpoints
 NAME                ENDPOINTS              AGE
-service-clusterip   10.244.140.107:80      3m1s
+kubernetes          192.168.198.100:6443   10d
+service-clusterip   10.244.140.101:80      11m
 
-$ ipvsadm -L -n
+
+[root@master k8s-resource]# ipvsadm -Ln
 IP Virtual Server version 1.2.1 (size=4096)
 Prot LocalAddress:Port Scheduler Flags
-  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn     
-TCP  10.12.150.224:80 rr
-  -> 10.244.140.107:80            Masq    1      0          0
+  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
+TCP  10.13.153.75:80 rr
+  -> 10.244.140.101:80            Masq    1      0          0 
 ```
 
 **负载分发策略**
