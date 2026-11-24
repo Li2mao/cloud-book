@@ -398,55 +398,54 @@ TCP  10.13.153.75:80 rr
   此模式可以使在spec中添加`sessionAffinity: ClientIP`选项
 
 ```bash
-$ kubectl edit svc service-clusterip
+[root@master ~]# kubectl edit svc service-clusterip
 sessionAffinity: ClientIP
 
-$ while true;do curl 10.13.125.29/hostname.html; done
-myapp-deploy-57bff895d5-fbln4
-myapp-deploy-57bff895d5-fbln4
-myapp-deploy-57bff895d5-fbln4
-myapp-deploy-57bff895d5-fbln4
-myapp-deploy-57bff895d5-fbln4
-myapp-deploy-57bff895d5-fbln4
-myapp-deploy-57bff895d5-fbln4
-myapp-deploy-57bff895d5-fbln4
+[root@master k8s-resource]# while true;do curl 10.244.140.103/hostname.html;done
+myapp-deploy-7dbdc8fc66-z2wlp
+myapp-deploy-7dbdc8fc66-z2wlp
+myapp-deploy-7dbdc8fc66-z2wlp
 
-$ ipvsadm -Ln
+
+
+[root@master k8s-resource]# ipvsadm -Ln
 IP Virtual Server version 1.2.1 (size=4096)
 Prot LocalAddress:Port Scheduler Flags
-  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn       
-TCP  10.13.125.29:80 rr persistent 10800
-  -> 10.244.140.106:80            Masq    1      0          155       
-  -> 10.244.196.141:80            Masq    1      0          0         
-  -> 10.244.196.142:80            Masq    1      0          0 
+  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
+TCP  10.13.153.75:80 rr persistent 10800
+  -> 10.244.140.103:80            Masq    1      0          0         
+  -> 10.244.140.104:80            Masq    1      0          0         
+  -> 10.244.196.138:80            Masq    1      0          0 
 ```
 
 ## HeadLess类型的Service
 
-在某些场景中，开发人员可能不想使用Service提供的负载均衡功能，而希望自己来控制负载均衡策略，针对这种情况，kubernetes提供了HeadLiness Service，这类Service不会分配Cluster IP，如果想要访问service，只能通过service的域名进行查询。
+在某些场景中，开发人员可能不想使用Service提供的负载均衡功能，而希望自己来控制负载均衡策略，针对这种情况，kubernetes提供了HeadLess Service，这类Service不会分配Cluster IP，如果想要访问service，只能通过service的域名进行查询。
 
 ```yaml
+[root@master k8s-resource]# cat 23-svc-headless.yml 
 apiVersion: v1
 kind: Service
 metadata:
-  name: service-headliness
+  name: service-headless
 spec:
   selector:
     app: myapp-deploy
-  clusterIP: None # 将clusterIP设置为None，即可创建headliness Service
+  clusterIP: None
   type: ClusterIP
   ports:
-  - port: 80    
+  - port: 80
     targetPort: 80
 ```
 
 ```bash
-$ kubectl get svc -o wide
-NAME                 TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE   SELECTOR
-service-headliness   ClusterIP   None            <none>        80/TCP    40s   app=myapp-deploy
+[root@master k8s-resource]# kubectl get svc -o wide
+NAME               TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE    SELECTOR
+kubernetes         ClusterIP   10.0.0.1     <none>        443/TCP   12d    <none>
+service-headless   ClusterIP   None         <none>        80/TCP    3m3s   app=myapp-deploy
 
-$ kubectl describe svc service-headliness
-Name:              service-headliness
+[root@master k8s-resource]# kubectl describe svc service-headless
+Name:              service-headless
 Namespace:         default
 Labels:            <none>
 Annotations:       <none>
@@ -454,25 +453,36 @@ Selector:          app=myapp-deploy
 Type:              ClusterIP
 IP Family Policy:  SingleStack
 IP Families:       IPv4
-IP:                None
+IP:                None		# 这里没有IP
 IPs:               None
 Port:              <unset>  80/TCP
 TargetPort:        80/TCP
-Endpoints:         10.244.140.107:80
+Endpoints:         10.244.140.103:80,10.244.140.104:80,10.244.196.138:80
 Session Affinity:  None
 Events:            <none>
 
-$ kubectl exec -it myapp-deploy-659f9975b8-2sntn -- /bin/bash
-root@myapp-deploy-659f9975b8-2sntn:/# cat /etc/resolv.conf 
+[root@master k8s-resource]# kubectl get pod
+NAME                            READY   STATUS    RESTARTS   AGE
+myapp-deploy-7dbdc8fc66-bvpf8   1/1     Running   0          32m
+myapp-deploy-7dbdc8fc66-sl4qx   1/1     Running   0          32m
+myapp-deploy-7dbdc8fc66-z2wlp   1/1     Running   0          32m
+
+
+[root@master k8s-resource]# kubectl exec -it myapp-deploy-7dbdc8fc66-bvpf8 -- bash
+
+root@myapp-deploy-7dbdc8fc66-bvpf8:/# cat /etc/resolv.conf 
 nameserver 10.0.0.10
 search default.svc.cluster.local svc.cluster.local cluster.local
 options ndots:5
 
-$ dig @10.0.0.10 service-headliness.default.svc.cluster.local
+root@myapp-deploy-7dbdc8fc66-bvpf8:/# apt install -y dnsutils
+
+root@myapp-deploy-7dbdc8fc66-bvpf8:/# dig @10.0.0.10 service-headless.default.svc.cluster.local
+
 ;; ANSWER SECTION:
-service-headliness.default.svc.cluster.local. 30 IN A 10.244.140.107
-service-headliness.default.svc.cluster.local. 30 IN A 10.244.196.145
-service-headliness.default.svc.cluster.local. 30 IN A 10.244.196.144
+service-headless.default.svc.cluster.local. 30 IN A 10.244.140.103
+service-headless.default.svc.cluster.local. 30 IN A 10.244.140.104
+service-headless.default.svc.cluster.local. 30 IN A 10.244.196.138
 ```
 
 ## NodePort类型的Service
@@ -482,6 +492,7 @@ service-headliness.default.svc.cluster.local. 30 IN A 10.244.196.144
 <img src="Service/image-20240913143156247.png" alt="image-20240913143156247" style="zoom:33%;" />
 
 ```yaml
+[root@master k8s-resource]# cat 24-svc-nodeport.yml 
 apiVersion: v1
 kind: Service
 metadata:
@@ -499,14 +510,15 @@ spec:
 查看是否能够正常的访问
 
 ```bash
-$ for i in {1..6};do curl 192.168.173.100:30002/hostname.html;done
-myapp-deploy-659f9975b8-nd66b
-myapp-deploy-659f9975b8-p4j5k
-myapp-deploy-659f9975b8-2sntn
-myapp-deploy-659f9975b8-nd66b
-myapp-deploy-659f9975b8-p4j5k
-myapp-deploy-659f9975b8-2sntn
+[root@master k8s-resource]# curl 10.8.195.237/hostname.html
+myapp-deploy-7dbdc8fc66-sl4qx
+[root@master k8s-resource]# curl 10.8.195.237/hostname.html
+myapp-deploy-7dbdc8fc66-z2wlp
+[root@master k8s-resource]# curl 10.8.195.237/hostname.html
+myapp-deploy-7dbdc8fc66-bvpf8
 ```
+
+![image-20261123101017789](C:\Users\asus\AppData\Roaming\Typora\typora-user-images\image-20261123101017789.png)
 
 ## LoadBalancer类型的Service
 
@@ -521,32 +533,37 @@ myapp-deploy-659f9975b8-2sntn
 <img src="Service/image-20240913160143805.png" alt="image-20240913160143805" style="zoom:33%;" />
 
 ```yaml
+[root@master k8s-resource]# cat 25-svc-externalname.yml 
 apiVersion: v1
 kind: Service
 metadata:
   name: service-externalname
-  namespace: dev
 spec:
   type: ExternalName # service类型
-  externalName: www.baidu.com  #改成ip地址也可以
+  externalName: www.baidu.com #改成ip地址也可以
 ```
 
 ```bash
-$ kubectl get svc
+[root@master k8s-resource]# kubectl get svc
 NAME                   TYPE           CLUSTER-IP     EXTERNAL-IP     PORT(S)        AGE
-service-externalname   ExternalName   <none>         www.baidu.com   <none>         7s
+kubernetes             ClusterIP      10.0.0.1       <none>          443/TCP        12d
+service-externalname   ExternalName   <none>         www.baidu.com   <none>         16s
+service-headless       ClusterIP      None           <none>          80/TCP         50m
+service-nodeport       NodePort       10.8.195.237   <none>          80:30002/TCP   17m
 
-$ dig @10.0.0.10 service-externalname.default.svc.cluster.local
+
+[root@master k8s-resource]# dig @10.0.0.10 service-externalname.default.svc.cluster.local
 ;; ANSWER SECTION:
-service-externalname.default.svc.cluster.local. 30 IN CNAME www.baidu.com.
-www.baidu.com.          30      IN      CNAME   www.a.shifen.com.
-www.a.shifen.com.       30      IN      A       180.101.50.242
-www.a.shifen.com.       30      IN      A       180.101.50.188
+service-externalname.default.svc.cluster.local.	30 IN CNAME www.baidu.com.
+www.baidu.com.		30	IN	CNAME	www.a.shifen.com.
+www.a.shifen.com.	30	IN	A	36.152.44.132
+www.a.shifen.com.	30	IN	A	36.152.44.93
+
 ```
 
 # Ingress介绍
 
-在前面课程中已经提到，Service对集群之外暴露服务的主要方式有两种：NotePort和LoadBalancer，但是这两种方式，都有一定的缺点：
+在前面课程中已经提到，Service对集群之外暴露服务的主要方式有两种：NodePort和LoadBalancer，但是这两种方式，都有一定的缺点：
 
 - NodePort方式的缺点是会占用很多集群机器的端口，那么当集群服务变多的时候，这个缺点就愈发明显
 - LB方式的缺点是每个service需要一个LB，浪费、麻烦，并且需要kubernetes之外设备的支持
@@ -574,6 +591,37 @@ Ingress（以Nginx为例）的工作原理如下：
 ```bash
 # 安装helm，helm在kubernetes中相当于yum，是可以在线去获取资源清单，快速部署服务
 $ curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+# 知周所众的原因，下载不了，提前从docker官网下载好安装包之后传到master上
+[root@master k8s-resource]# scp ingres+helm.zip root@node01:/root 
+[root@master k8s-resource]# scp ingres+helm.zip root@node02:/root
+[root@master ~]# unzip ingres+helm.zip 
+[root@master ~]# tar xzvf helm-v3.12.3-linux-amd64.tar.gz 
+[root@master ~]# chmod +x linux-amd64/helm 
+[root@master ~]# mv linux-amd64/helm /usr/bin/
+# helm只需要master安装，底下节点不需要安装
+[root@master ~]# helm version
+version.BuildInfo{Version:"v3.12.3", GitCommit:"3a31588ad33fe3b89af5a2a54ee1d25bfe6eaa5e", GitTreeState:"clean", GoVersion:"go1.20.7"}
+# 镜像已经提前准备好，docker导入即可
+[root@master ~]# cd ingress-nginx/
+[root@master ingress-nginx]# ls
+chart  image
+[root@master ingress-nginx]# cd image/
+[root@master image]# ls
+ingress-nginx-kube-webhook-certgen-v20231011-8b53cabe0.tar
+registry.k8s.io-ingress-nginx-controller-v1.9.4.tar
+[root@master chart]# tar xzvf ingress-nginx-4.8.3.tgz 
+[root@master chart]# cd ingress-nginx
+
+# 这里注意要在两台node机器上也要导入镜像
+[root@master image]# docker load -i registry.k8s.io-ingress-nginx-controller-v1.9.4.tar 
+[root@master image]# docker load -i ingress-nginx-kube-webhook-certgen-v20231011-8b53cabe0.tar 
+
+# 提前进行安装Ingress-nginx的配置，具体配置在下个代码
+[root@master ingress-nginx]# mv ../values.yaml .
+mv: overwrite './values.yaml'? y
+
+
+# 老课件
 $ chmod 700 get_helm.sh
 $ ./get_helm.sh
 
@@ -597,6 +645,7 @@ $ helm search repo wordpress	# 在repo中搜索
 ## 安装Ingress-nginx
 
 ```bash
+# 先不用
 $ helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 $ helm pull ingress-nginx/ingress-nginx
 
@@ -605,16 +654,20 @@ $ helm pull ingress-nginx/ingress-nginx
 dnsPolicy的值改为: ClusterFirstWithHostNet
 kind类型更改为：DaemonSet
 ingressClassResource.default:true
+# 这里没有安装prometheus直接注释掉
+681       annotations: {}
+682         #prometheus.io/scrape: "true"
+683         #prometheus.io/port: "10254"
       
-# 关闭所有镜像的 digest   
+# 关闭所有镜像的 digest，注释掉即可
 
 # 如果是本地的helm chart，使用这个命令安装
-$ kubectl create ns ingress
-$ helm install ingress-nginx -n ingress . -f values.yaml
-$ kubectl get pod -n ingress
+[root@master ingress-nginx]# kubectl create ns ingress
+[root@master ingress-nginx]# helm install ingress-nginx -n ingress . -f values.yaml
+[root@master ingress-nginx]# kubectl get pod -n ingress
 NAME                             READY   STATUS    RESTARTS   AGE
-ingress-nginx-controller-7c4x8   1/1     Running   0          12s
-ingress-nginx-controller-bjk4s   1/1     Running   0          12s
+ingress-nginx-controller-cxpdq   1/1     Running   0          17s
+ingress-nginx-controller-vwgc8   1/1     Running   0          18s
 ```
 
 ## 实验测试
@@ -624,6 +677,7 @@ ingress-nginx-controller-bjk4s   1/1     Running   0          12s
 ![image-20240914152836257](Service/image-20240914152836257.png)
 
 ```yaml
+[root@master k8s-resource]# cat 26-svc-ingress-1.yml 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -695,79 +749,92 @@ spec:
   ports:
   - port: 8080
     targetPort: 8080
+
 ```
 
 ### Http代理
 
 ```yaml
+[root@master k8s-resource]# cat 27-svc-ingress-2.yml 
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: ingress-nginx
 spec:
   rules:
-  - host: nginx.iproute.cn
+  - host: nginx.li2mao.cn
     http:
-      paths:
+      paths: 
       - path: /
         pathType: Prefix
-        backend: 
+        backend:
           service:
             name: nginx-service
-            port: 
+            port:
               number: 80
   ingressClassName: nginx
----
-
+--- 
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: ingress-tomcat
 spec:
   rules:
-  - host: tomcat.iproute.cn
+  - host: tomcat.li2mao.cn
     http:
-      paths:
+      paths: 
       - path: /
         pathType: Prefix
         backend:
           service:
             name: tomcat-service
-            port: 
+            port:
               number: 8080
   ingressClassName: nginx
+
 ```
 
 查看运行状态
 
 ```bash
-$ kubectl get ing
-NAME             CLASS   HOSTS               ADDRESS   PORTS   AGE
-ingress-nginx    nginx   nginx.iproute.cn              80      7s
-ingress-tomcat   nginx   tomcat.iproute.cn             80      7s
+[root@master k8s-resource]# kubectl get ingress
+NAME             CLASS   HOSTS              ADDRESS   PORTS   AGE
+ingress-nginx    nginx   nginx.li2mao.cn              80      2m43s
+ingress-tomcat   nginx   tomcat.li2mao.cn             80      44s
 
-$ kubectl describe ing
+
+[root@master k8s-resource]# kubectl describe ingress
+
+Rules:
+  Host             Path  Backends
+  ----             ----  --------
+  nginx.li2mao.cn  
+                   /   nginx-service:80 (10.244.140.111:80,10.244.196.139:80,10.244.196.140:80)
 
 Rules:
   Host              Path  Backends
   ----              ----  --------
-  nginx.iproute.cn  
-                    /   nginx-service:80 (10.244.140.109:80,10.244.196.149:80,10.244.196.150:80)
+  tomcat.li2mao.cn  
+                    /   tomcat-service:8080 (10.244.140.105:8080,10.244.196.141:8080,10.244.196.145:8080)
 
-Rules:
-  Host               Path  Backends
-  ----               ----  --------
-  tomcat.iproute.cn  
-                     /   tomcat-service:8080 (10.244.140.110:8080,10.244.196.151:8080,10.244.196.153:8080)
 ```
+
+修改主机hosts文件
+
+```python
+C:\Windows\System32\drivers\etc\hosts
+# 编辑hosts文件
+
+192.168.198.101 nginx.li2mao.cn tomcat.li2mao.cn
+```
+
+
 
 访问测试
 
-![image-20240914154740672](Service/image-20240914154740672.png)
+![image-20261123184119629](C:\Users\asus\AppData\Roaming\Typora\typora-user-images\image-20261123184119629.png)多次访问主机名，可以看到负载均衡
 
-其中nginx多次访问主机名，可以看到负载均衡
-
-![image-20240914154758983](Service/image-20240914154758983.png)
+![](C:\Users\asus\AppData\Roaming\Typora\typora-user-images\image-20261123184157243.png)
 
 ## Https代理
 
