@@ -129,3 +129,13 @@ https://kuboard.cn/v4/install/quickstart.html
 安装好后链接上集群，最终界面如下
 
 ![image-20240918150900081](DashBoard/image-20240918150900081.png)
+
+## 快速上手
+
+登陆之后导入集群
+
+![image-20261126194906217](C:\Users\asus\AppData\Roaming\Typora\typora-user-images\image-20261126194906217.png)
+
+等待导入成功，即可查看对应内容
+
+![image-20261126195048510](C:\Users\asus\AppData\Roaming\Typora\typora-user-images\image-20261126195048510.png)
